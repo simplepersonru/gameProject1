@@ -12,9 +12,19 @@ namespace Platformer.Model
     public class PlatformerModel
     {
         /// <summary>
-        /// The virtual camera in the scene.
+        /// The virtual camera in the scene (optional – may be null when using CameraController).
         /// </summary>
         public Unity.Cinemachine.CinemachineCamera virtualCamera;
+
+        /// <summary>
+        /// The custom one-way camera controller. Used instead of (or alongside) virtualCamera.
+        /// </summary>
+        public CameraController cameraController;
+
+        /// <summary>
+        /// The level generator that creates and regenerates the procedural scene.
+        /// </summary>
+        public LevelGenerator levelGenerator;
 
         /// <summary>
         /// The main component which controls the player sprite, controlled 

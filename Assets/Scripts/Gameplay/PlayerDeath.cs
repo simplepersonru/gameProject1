@@ -20,8 +20,16 @@ namespace Platformer.Gameplay
             if (player.health.IsAlive)
             {
                 player.health.Die();
-                model.virtualCamera.Follow = null;
-                model.virtualCamera.LookAt = null;
+
+                // Stop the camera from following the dead player
+                if (model.virtualCamera != null)
+                {
+                    model.virtualCamera.Follow = null;
+                    model.virtualCamera.LookAt = null;
+                }
+                if (model.cameraController != null)
+                    model.cameraController.Disable();
+
                 // player.collider.enabled = false;
                 player.controlEnabled = false;
 

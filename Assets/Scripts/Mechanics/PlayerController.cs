@@ -66,13 +66,6 @@ namespace Platformer.Mechanics
             if (controlEnabled)
             {
                 move.x = m_MoveAction.ReadValue<Vector2>().x;
-                if (jumpState == JumpState.Grounded && m_JumpAction.WasPressedThisFrame())
-                    jumpState = JumpState.PrepareToJump;
-                else if (m_JumpAction.WasReleasedThisFrame())
-                {
-                    stopJump = true;
-                    Schedule<PlayerStopJump>().player = this;
-                }
             }
             else
             {
@@ -87,6 +80,11 @@ namespace Platformer.Mechanics
             jump = false;
             switch (jumpState)
             {
+                case JumpState.Grounded:
+                    // Auto-jump: immediately prepare to jump when control is enabled
+                    if (controlEnabled)
+                        jumpState = JumpState.PrepareToJump;
+                    break;
                 case JumpState.PrepareToJump:
                     jumpState = JumpState.Jumping;
                     jump = true;
@@ -107,7 +105,8 @@ namespace Platformer.Mechanics
                     }
                     break;
                 case JumpState.Landed:
-                    jumpState = JumpState.Grounded;
+                    // Auto-jump: bounce off any surface immediately
+                    jumpState = controlEnabled ? JumpState.PrepareToJump : JumpState.Grounded;
                     break;
             }
         }
