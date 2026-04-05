@@ -1,0 +1,179 @@
+name: 🎮 Build and Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ──────────────────────────────────────────────────────────────
+  # Build WebGL and Android in parallel
+  # ──────────────────────────────────────────────────────────────
+  build:
+    name: Build (${{ matrix.targetPlatform }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        targetPlatform:
+          - WebGL
+          - Android
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Cache Unity Library
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-${{ matrix.targetPlatform }}-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: |
+            Library-${{ matrix.targetPlatform }}-
+            Library-
+
+      - name: Build Unity project
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          unityVersion: 6000.3.12f1
+          targetPlatform: ${{ matrix.targetPlatform }}
+          androidExportType: androidPackage
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build-${{ matrix.targetPlatform }}
+          path: build/${{ matrix.targetPlatform }}
+          retention-days: 14
+
+  # ──────────────────────────────────────────────────────────────
+  # Comment on PR with artifact download links
+  # ──────────────────────────────────────────────────────────────
+  notify-pr:
+    name: Notify PR
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Find existing bot comment
+        uses: peter-evans/find-comment@v3
+        id: find-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: "🎮 Сборка готова"
+
+      - name: Create or update PR comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          edit-mode: replace
+          body: |
+            ## 🎮 Сборка готова!
+
+            Скачайте артефакты сборки со страницы [Actions Run #${{ github.run_number }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}):
+
+            | Платформа | Артефакт | Описание |
+            |-----------|---------|----------|
+            | 🌐 WebGL (WASM) | `Build-WebGL` | Запуск в браузере |
+            | 📱 Android APK | `Build-Android` | Установка на Android |
+
+            > Прокрутите страницу по ссылке выше вниз до раздела **"Artifacts"** и нажмите на нужный артефакт для скачивания.
+
+  # ──────────────────────────────────────────────────────────────
+  # Deploy WebGL to GitHub Pages (main/master branch only)
+  # ──────────────────────────────────────────────────────────────
+  deploy-pages:
+    name: Deploy WebGL → GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Download WebGL build
+        uses: actions/download-artifact@v4
+        with:
+          name: Build-WebGL
+          path: webgl-build
+
+      - name: Locate WebGL index.html
+        id: webgl-dir
+        run: |
+          INDEX=$(find webgl-build -name 'index.html' | head -1)
+          DIR=$(dirname "$INDEX")
+          echo "Deploying from: $DIR"
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact for Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ steps.webgl-dir.outputs.dir }}
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
+
+  # ──────────────────────────────────────────────────────────────
+  # Create GitHub Release with APK (main/master branch only)
+  # ──────────────────────────────────────────────────────────────
+  release:
+    name: Release Android APK
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    permissions:
+      contents: write
+    steps:
+      - name: Download Android build
+        uses: actions/download-artifact@v4
+        with:
+          name: Build-Android
+          path: android-build
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: "Build #${{ github.run_number }}"
+          body: |
+            🤖 Автоматическая сборка из коммита [`${{ github.sha }}`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+
+            ### 📥 Скачать
+            - 📱 **Android APK** — прикреплён к этому релизу (файл `.apk`)
+            - 🌐 **WebGL (WASM)** — [играть в браузере на GitHub Pages](https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/)
+
+            ### ℹ️ Установка APK на Android
+            1. Скачайте `.apk` файл на телефон
+            2. Разрешите установку из неизвестных источников в настройках
+            3. Откройте скачанный файл и установите
+          files: android-build/**/*.apk
+          prerelease: true
+          generate_release_notes: true
