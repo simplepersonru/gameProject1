@@ -145,8 +145,8 @@ jobs:
           BUILD_DIR="${{ steps.webgl-dir.outputs.dir }}/Build"
           if [ -d "$BUILD_DIR" ]; then
             echo "Decompressing .gz files in $BUILD_DIR"
+            shopt -s nullglob
             for gz_file in "$BUILD_DIR"/*.gz; do
-              [ -f "$gz_file" ] || continue
               echo "  Decompressing: $gz_file"
               gunzip "$gz_file"
             done
