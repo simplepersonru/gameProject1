@@ -140,6 +140,28 @@ jobs:
           echo "Deploying from: $DIR"
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
 
+      - name: Decompress gzip files for GitHub Pages
+        run: |
+          BUILD_DIR="${{ steps.webgl-dir.outputs.dir }}/Build"
+          if [ -d "$BUILD_DIR" ]; then
+            echo "Decompressing .gz files in $BUILD_DIR"
+            for gz_file in "$BUILD_DIR"/*.gz; do
+              [ -f "$gz_file" ] || continue
+              echo "  Decompressing: $gz_file"
+              gunzip "$gz_file"
+            done
+            # Update index.html to reference decompressed file names
+            INDEX="${{ steps.webgl-dir.outputs.dir }}/index.html"
+            if [ -f "$INDEX" ]; then
+              echo "Updating index.html to remove .gz extensions"
+              sed -i 's/\.js\.gz/.js/g; s/\.wasm\.gz/.wasm/g; s/\.data\.gz/.data/g' "$INDEX"
+            fi
+            echo "Build directory contents after decompression:"
+            ls -la "$BUILD_DIR"
+          else
+            echo "No Build directory found, skipping decompression"
+          fi
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v4
 
